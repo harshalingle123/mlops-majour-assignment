@@ -1,13 +1,13 @@
 import joblib
 import numpy as np
-from sklearn.metrics import mean_squared_error
+import os
+from sklearn.metrics import mean_squared_error, r2_score
 from utils import save_model, load_data_split
 
 def perform_quantization():
     print("Initiating parameter quantization...")
     
     try:
-        # Load model parameters
         print("Loading model parameters...")
         params = joblib.load('models/raw_params.joblib')
         weights = params.get('weights')
@@ -29,7 +29,7 @@ def perform_quantization():
             w_quantized = ((weights - w_min) / w_range * 255).astype(np.uint8)
         
         print("Quantizing bias...")
-        b_min, b_max = bias, bias  
+        b_min, b_max = bias, bias
         if b_max == b_min:
             print("Warning: Bias range is zero, mapping to uint8 midpoint")
             b_quantized = np.array(128, dtype=np.uint8)
@@ -52,9 +52,9 @@ def perform_quantization():
         if w_range == 0:
             w_dequantized = np.copy(weights)
         else:
-            w_dequantized = w_min + (w_quantized * (w_max - w_min) / 255)
+            w_dequantized = w_min + (w_quantized.astype(np.float32) * w_range / 255)
         
-        b_dequantized = b_min if b_max == b_min else b_min + (b_quantized * (b_max - b_min) / 255)
+        b_dequantized = b_min if b_max == b_min else b_min + (b_quantized.astype(np.float32) * (b_max - b_min) / 255)
         
         weight_error = np.abs(weights - w_dequantized).max()
         bias_error = np.abs(bias - b_dequantized)
@@ -67,12 +67,37 @@ def perform_quantization():
         if X_test.shape[1] != w_dequantized.shape[0]:
             raise ValueError(f"Shape mismatch: X_test ({X_test.shape[1]}) vs weights ({w_dequantized.shape[0]})")
         
-        y_pred = np.dot(X_test, w_dequantized) + b_dequantized
-        mse = mean_squared_error(y_test, y_pred)
-        print(f"De-quantized model MSE: {mse:.4f}")
+        y_pred_dequant = np.dot(X_test, w_dequantized) + b_dequantized
+        y_pred_manual = np.dot(X_test, weights) + bias
+        y_pred_original = y_pred_manual  
         
+        mse = mean_squared_error(y_test, y_pred_dequant)
+        r2 = r2_score(y_test, y_pred_dequant)
+        model_size_kb = os.path.getsize(save_path) / 1024 if os.path.exists(save_path) else 0.0
+        
+        print("\nEvaluation Metrics")
+        print(f"{'R² Score':<30}{r2:.4f}")
+        print(f"{'Mean Squared Error (MSE)':<30}{mse:.4f}")
+        print(f"{'Quantized Model Size':<30}{model_size_kb:.1f} KB")
+        
+        print("\nInference Test (first 10 samples):")
+        print("Original predictions (sklearn):")
+        print(np.round(y_pred_original[:10], 6))
+
+        print("\nManual original predictions:")
+        print(np.round(y_pred_manual[:10], 6))
+
+        print("\nManual dequantized predictions:")
+        print(np.round(y_pred_dequant[:10], 6))
+
+        print("\nDifference: Sklearn vs Manual Original:")
+        print(np.round(np.abs(y_pred_original[:10] - y_pred_manual[:10]), 6))
+
+        print("\nDifference: Original Manual vs Dequantized Manual:")
+        print(np.round(np.abs(y_pred_manual[:10] - y_pred_dequant[:10]), 6))
+
         return w_dequantized, b_dequantized
-    
+
     except FileNotFoundError as e:
         print(f"Error: Could not find model file - {e}")
         return None, None
