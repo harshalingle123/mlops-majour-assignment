@@ -39,7 +39,7 @@ jobs:
       - name: Quantize model
         run: python app/quantize.py
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: pipeline-artifacts
           path: |
@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: pipeline-artifacts
           path: artifacts/
